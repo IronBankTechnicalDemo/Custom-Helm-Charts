@@ -1,0 +1,197 @@
+# Statefulset are in beta state in k8s 1.5-1.8
+apiVersion: {{ .Values.apiVersion | default "apps/v1beta1" }}
+
+# Statefulsets are in GA state in k8s 1.9+ (not beta anymore)
+# apiVersion: apps/v1
+
+## We needed to use VolumeTemplate, which does not allow use of Deployment, so we had to use StatefulSet
+# kind: Deployment
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+{{- include "jira-chart.labels" . | indent 4 }}
+spec:
+  # This service should already exist
+  serviceName: {{ .Release.Name }}
+  replicas: {{ .Values.replicas | default 1 }}    ## replicas 2
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 50 }}
+      containers:
+      - name: {{ required "A container name is required!" .Values.containerName }}
+        image: {{ .Values.image.name }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.imagePullPolicy }}
+        # Resources were added by Kamran on 08 Mar 2018
+        {{- if .Values.resources }}
+        resources:
+          requests:
+            cpu: "{{ .Values.resources.cpuRequest }}"
+            memory: "{{ .Values.resources.memoryRequest }}"
+          limits:
+            cpu: "{{ .Values.resources.cpuLimit }}"
+            memory: "{{ .Values.resources.memoryLimit }}"
+        {{- end }}
+
+        ports:
+          - containerPort: {{ .Values.containerPort }}
+            name: jira-main
+          {{- if .Values.datacenter.enabled }}
+          - containerPort: 40001
+            name: rmi
+          {{- end }}
+
+        env:
+        {{- if .Values.certs.enabled }}
+          - name: ENABLE_CERT_IMPORT
+            value: "true"
+          - name: SSL_CERTS_PATH
+            value: {{ .Values.certs.mountPath }}
+        {{- end }}
+        
+        {{- if .Values.reverseProxy.enabled }}
+          {{- range $key, $value := .Values.reverseProxyEnvVars }}
+          - name: {{ $key }}
+            value: {{ $value | quote }}
+          {{- end }}
+        {{- end }}
+
+        {{- if .Values.databaseInitialization.enabled }}
+          {{- range $key, $value := .Values.databaseEnvVars }}
+          - name: {{ $key }}
+            value: {{ $value | quote }}
+          {{- end }}
+        {{- end }}
+
+        {{- if .Values.datacenter.enabled }}
+          {{- range $key, $value := .Values.clusterEnvVars }}
+          - name: {{ $key }}
+            value: {{ $value | quote }}
+          {{- end }}
+        {{- end }}
+    
+        {{- range $key, $value := .Values.envVars }}
+          - name: {{ $key }}
+            value: {{ $value | quote }}
+        {{- end }}
+
+        {{- if .Values.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.livenessProbe.path }}
+            port: {{ .Values.livenessProbe.port }}
+          periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 10 }}
+          successThreshold: {{ .Values.livenessProbe.successThreshold | default 1 }}
+          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 120 }}
+          timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds | default 1 }}
+          failureThreshold: {{ .Values.livenessProbe.failureThreshold | default 3 }}
+        {{- end }}
+        {{- if .Values.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.readinessProbe.path }}
+            port: {{ .Values.readinessProbe.port }}
+          periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 10 }}
+          successThreshold: {{ .Values.readinessProbe.successThreshold | default 1 }}
+          initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 120 }}
+          timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds | default 1 }}
+          failureThreshold: {{ .Values.readinessProbe.failureThreshold | default 3 }}
+        {{- end }}
+
+        volumeMounts:
+          - name: "jira-persistent-storage"
+            mountPath: /var/atlassian/application-data/jira
+          {{- if .Values.datacenter.enabled }}
+          - name: "jira-datacenter"
+            mountPath: {{ .Values.persistence.datacenterMountPath }}
+          {{- end }}
+          {{- if .Values.certs.enabled }}
+          - name: "jira-certs"
+            mountPath: {{ .Values.certs.mountPath }}
+          {{- end }}
+          {{- if .Values.customFooter.enabled }}
+          - name: {{ .Release.Name }}-footer-config-vol
+            mountPath: /opt/atlassian/jira/atlassian-jira/WEB-INF/classes/templates/plugins/footer/footer.vm
+            subPath: footer.vm
+          {{- end }}
+          {{- if .Values.customAbout.enabled }}
+          - name: {{ .Release.Name }}-about-config-vol
+            mountPath: /opt/atlassian/jira/atlassian-jira/templates/jira/about/about.soy
+            subPath: about.soy
+          {{- end }}
+
+      {{- if .Values.filebeat.enabled }}
+      - name: filebeat-sidecar
+        image: "{{ .Values.filebeat.image.repository }}{{ .Values.filebeat.image.version }}:{{ .Values.filebeat.image.tag }}"
+        volumeMounts:
+        - name: filebeat-config-vol
+          mountPath: /etc/filebeat/filebeat.yml
+          subPath: filebeat.yml
+        {{- range $logConfig := .Values.filebeat.logConfig }}
+        - name:  {{ $logConfig.mountName }}-vol
+          mountPath: {{ $logConfig.mountPath }}
+        {{- end }}
+      {{- end }}
+
+      volumes:
+       {{- if .Values.certs.enabled }}
+        - name: jira-certs
+          secret:
+            secretName: {{ .Values.certs.secretName }}
+      {{- end }}
+      {{- if .Values.datacenter.enabled }}
+        - name: "jira-datacenter"
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.datacenterExistingClaimName | default (printf "%v-datacenter-pvc" .Release.Name) }}
+      {{- end }}
+      {{- if .Values.customFooter.enabled }}
+        - name: {{ .Release.Name }}-footer-config-vol
+          configMap:
+            name: {{ .Release.Name }}-footer-config
+      {{- end }}
+      {{- if .Values.customAbout.enabled }}
+        - name: {{ .Release.Name }}-about-config-vol
+          configMap:
+            name: {{ .Release.Name }}-about-config
+      {{- end }}
+      {{- if .Values.filebeat.enabled }}
+        - name: filebeat-config-vol
+          configMap:
+            name: {{ .Release.Name }}-filebeat
+            defaultMode: 0644
+      {{- range $logConfig := .Values.filebeat.logConfig }}
+        - name:  {{ $logConfig.mountName }}-vol
+          emptyDir: {}
+      {{- end }}
+      {{- end }}
+
+      {{- if .Values.image.privateRegistry }}
+      imagePullSecrets:
+      - name: {{ .Values.image.pullSecret }}
+      {{- end }}
+
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+
+  volumeClaimTemplates:
+  - metadata:
+      name: jira-persistent-storage
+    spec:
+      accessModes: [ {{ .Values.persistence.volumeClaimTemplates.accessModes | quote }} ]
+      resources:
+        requests:
+          storage: {{ .Values.persistence.volumeClaimTemplates.storage | quote }}
+      storageClassName: {{ .Values.persistence.volumeClaimTemplates.storageClassName | quote }}
+  {{- if .Values.persistence.volumeClaimTemplates.selector.enabled }}
+      selector:
+        matchLabels:
+          {{- range $key,$value := .Values.persistence.volumeClaimTemplates.selector.matchLabels }}
+          {{ $key }} : {{ $value }}
+          {{- end }}
+  {{- end }}

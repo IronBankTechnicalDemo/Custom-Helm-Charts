@@ -1,0 +1,4 @@
+apiVersion: v1
+description: A Jira Software Server Helm chart
+name: jirasoftware
+version: 1.0.0

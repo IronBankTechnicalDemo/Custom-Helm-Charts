@@ -1,0 +1,38 @@
+# Documentation: https://kubernetes.io/docs/concepts/services-networking/service/
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+  {{- include "jira-chart.labels" . | indent 4 }}
+
+  annotations:
+  {{- range $key, $value := .Values.service.annotations }}
+    {{ $key }}: {{ $value | quote }}
+  {{- end }}
+spec:
+  ports:
+    # port is what this service should serve on, and targetPort is the port in the container.
+    - port: {{ .Values.service.port }}
+      name: jira-main
+      targetPort: {{ .Values.service.port }}
+      protocol: {{ .Values.service.protocol }}
+    - port: 8888
+      name: jira-internal-connector
+      targetPort: 8888
+      protocol: TCP
+  {{- if .Values.datacenter.enabled }}
+    - port: 40001
+      name: rmi
+      protocol: TCP
+      targetPort: 40001
+  {{- end }}
+
+{{- if .Values.datacenter.enabled }}
+  clusterIP: None
+{{- else }}
+  type: {{ .Values.service.type | default "ClusterIP" }}
+{{- end }}
+
+  selector:
+    app: {{ .Release.Name }}

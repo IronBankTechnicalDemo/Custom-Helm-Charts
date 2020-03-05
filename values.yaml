@@ -1,0 +1,196 @@
+# Default values for the Jira Chart.
+# This is a YAML-formatted file.
+
+# Declare variables with default values to be passed into your templates.
+# To override them, you need to (a) either adjust this file, or (b) provide your own values file,
+# which overrides the values found here.
+
+# Can be changed to old api for compatibility reasons: extensions/v1beta1
+apiVersion: apps/v1
+
+replicas: 1
+containerName: jira
+
+image:
+  # https://dev.azure.com/cloudfitsoftware/DOD%20Central%20Repository/_git/Jira
+  name: docker-dev.cloudfitonline.com/jira/jira-software8.6.1
+  tag: 1.0.3
+  imagePullPolicy: Always
+  privateRegistry: true
+  pullSecret: jira-registry-pull
+
+imagePullSecrets:
+  enabled: true
+  name: jira-registry-pull
+  username: <repo_username_removed>
+  password: <repo_password_removed>
+  registry: docker-dev.cloudfitonline.com
+
+containerPort: 8080
+terminationGracePeriodSeconds: 50
+
+# Configure reverse proxy
+reverseProxy:
+  enabled: true
+
+reverseProxyEnvVars:
+  ATL_PROXY_NAME: jirasoftware.apps.cloudfitdsop.com
+  ATL_PROXY_PORT: 443
+  ATL_TOMCAT_SCHEME: https
+  ATL_TOMCAT_SECURE: true
+
+# Initialize database
+databaseInitialization:
+  enabled: false
+
+databaseEnvVars:
+  ATL_JDBC_URL: <db_url_removed>
+  ATL_JDBC_USER: <db_username_removed>
+  ATL_JDBC_PASSWORD: <db_password_removed>
+  ATL_DB_SCHEMA_NAME: public
+  ATL_DB_TYPE: postgres72
+  ATL_DB_DRIVER: org.postgresql.Driver
+
+# Clustering
+datacenter:
+  enabled: false
+
+clusterEnvVars:
+  CLUSTERED: true
+  JIRA_SHARED_HOME: /mnt/shared
+
+# Add certs inside the docker container
+certs:
+  enabled: true
+  # The secret below must be created in advance to contain all your certs
+  # It will be mounted to the path you specify below inside the container
+  # to create the secret, you can use the following command:
+  # kubectl create secret generic my-top-secret --from-file=path/to/certs/dir --namespace my-ns
+  secretName: jira-tls
+  mountPath: /opt/atlassian/ssl
+
+# Other environment variables to pass in
+envVars:
+  JVM_MINIMUM_MEMORY: 2048m
+  JVM_MAXIMUM_MEMORY: 4096m
+  JVM_RESERVED_CODE_CACHE_SIZE: 512m
+  JVM_SUPPORT_RECOMMENDED_ARGS: "-Djavax.net.ssl.trustStore=/etc/alternatives/jre/lib/security/cacerts -Datlassian.plugins.enable.wait=300"
+  SET_PERMISSIONS: false
+
+# Custome page modifications
+customFooter:
+  enabled: true
+
+customAbout:
+  enabled: true
+
+livenessProbe:
+  enabled: false
+  path: /status
+  port: jira-main
+  successThreshold: 1
+  periodSeconds: 10
+  initialDelaySeconds: 120
+  timeoutSeconds: 1
+  failureThreshold: 3
+readinessProbe:
+  enabled: true
+  path: /status
+  port: jira-main
+  successThreshold: 1
+  periodSeconds: 10
+  initialDelaySeconds: 120
+  timeoutSeconds: 1
+  failureThreshold: 3
+
+resources:
+  cpuRequest: 3000m
+  cpuLimit: 4000m
+  memoryRequest: 8144Mi
+  memoryLimit: 8144Mi
+
+persistence:
+  # define volume claim template.
+  volumeClaimTemplates:
+    accessModes: ReadWriteOnce
+    storage: 8Gi
+    storageClassName: azure-standard
+    selector:
+      enabled: false
+      matchLabels:
+        app: jira
+        system: production
+        type: homefolder
+
+  # datacenter volume -- Needs datacenter.enabled to be set to true or else it would be ignored.
+  datacenterExistingClaimName: ""
+  datacenterMountPath: /mnt/shared/
+  datacenterVolumeClaimTemplates:
+    accessModes: ReadWriteMany
+    storage: 10Gi
+    storageClassName: azure-standard
+    selector:
+      enabled: false
+      matchLabels:
+        app: jira
+        system: production
+        type: datacenter
+
+service:
+  type: ClusterIP
+  port: 8080
+  protocol: TCP
+  annotations:
+    traefik.backend.loadbalancer.sticky: "true"
+
+securityContext:
+  runAsUser: 1000
+  fsGroup: 1000
+
+ingress:
+  enabled: true
+  annotations:
+    haproxy.router.openshift.io/timeout: 10m # Increased timeout necessary for database initialization
+  path: /
+  hosts:
+    - host: jirasoftware.apps.cloudfitdsop.com
+      paths: []
+  secure:
+    enabled: false
+  tls:
+    - secretName: jira-tls
+      hosts:
+        - jirasoftware.apps.cloudfitdsop.com
+      crt: <tls_cert_removed>
+      key: <tls_cert_key_removed>
+
+# When defined, postgres database will be automatically configured.
+# When commented out, database must be configured in Jira setup process.
+# Multiple blocks (mountName, mountPath, logPaths, logParams) can be defined to create multiple pipelines
+filebeat:
+  enabled: false
+  image:
+    # https://dev.azure.com/cloudfitsoftware/DOD%20Central%20Repository/_git/Filebeat
+    repository: docker-dev.cloudfitonline.com/filebeat/filebeat
+    version: 7.5.1
+    tag: 0.0.3
+    pullPolicy: Always
+  logstashHost: logstash.felk-stack.svc.cluster.local:5045
+  logConfig:
+    - mountName: jira-app-logs
+      mountPath: /var/atlassian/application-data/jira/log
+      logPaths:
+        - /var/atlassian/application-data/jira/log/atlassian-jira-security.log
+        - /var/atlassian/application-data/jira/log/atlassian-jira.log
+      logParams:
+        multiline.pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}
+        multiline.negate: true
+        multiline.match: after
+    - mountName: tomcat-logs
+      mountPath: /opt/atlassian/jira/logs
+      logPaths:
+        - /opt/atlassian/jira/logs/catalina.*
+      logParams:
+        multiline.pattern: ^[0-9]{2}-[[:alpha:]]{3}-[0-9]{4}
+        multiline.negate: true
+        multiline.match: after

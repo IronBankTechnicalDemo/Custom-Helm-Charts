@@ -1,0 +1,12 @@
+{{- if .Values.ingress.enabled -}}
+{{- range .Values.ingress.tls }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{.secretName}}
+data:
+  tls.crt: {{.crt}}
+  tls.key: {{.key}}
+type: kubernetes.io/tls
+{{- end }}
+{{- end }}

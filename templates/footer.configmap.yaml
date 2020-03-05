@@ -1,0 +1,54 @@
+{{- if .Values.customFooter.enabled }}
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ .Release.Name }}-footer-config
+data:
+  footer.vm: |-
+    #disable_html_escaping()
+    ## @vtlvariable name="string" type="org.apache.commons.lang3.StringUtils"
+    ## @vtlvariable name="buildVersion" type="java.lang.String"
+    ## @vtlvariable name="buildNumber" type="java.lang.String"
+    ## @vtlvariable name="commitId" type="java.lang.String"
+    ## @vtlvariable name="nodeId" type="java.lang.String"
+    ## @vtlvariable name="partnerName" type="java.lang.String"
+    ## @vtlvariable name="linkIssue" type="java.lang.String"
+    ## @vtlvariable name="linkJira" type="java.lang.String"
+    ## @vtlvariable name="linkAbout" type="java.lang.String"
+    ## @vtlvariable name="licenseLink" type="java.lang.String"
+    ## @vtlvariable name="licenseHasAlert" type="java.lang.Boolean"
+    <ul class="atlassian-footer">
+        <li>
+            Atlassian Jira <a class="seo-link" rel="nofollow" href="$linkJira">Project Management Software</a>
+            #set ($formattedCommitId = "")
+            #if ($string.isNotBlank("$commitId"))
+                ## shorten the Git SHA
+                #set ($formattedCommitId = "-<span title='$!{commitId}' data-commit-id='${commitId}}'>sha1:${commitId.substring(0, 7)}</span>")
+            #end
+            #set ($formattedPartnerName = "#if ($string.isNotBlank($partnerName))-$partnerName#{else}#end")
+            #set ($formattedNodeId = "#if ($string.isNotBlank($nodeId)):${nodeId}#{else}#end")
+            <span id="footer-build-information">(v${buildVersion}#${buildNumber}${formattedCommitId}$!{formattedNodeId}${formattedPartnerName})</span>
+        </li>
+        <li>
+            <a id="about-link" rel="nofollow" href="${linkAbout}/secure/AboutPage.jspa">About Jira</a>
+        </li>
+        <li>
+            <a id="footer-report-problem-link" rel="nofollow" href="$linkIssue">Report a problem</a>
+        </li>
+    </ul>
+    #if($licenseLink)
+        #set($className = "#if($licenseHasAlert)licensemessagered#{else}licensemessage#end")
+        <p class="atlassian-footer">
+            <span class="$className">
+                ${licenseLink}
+            </span>
+        </p>
+    #end
+    <p class="atlassian-footer">
+        <span class="$className">
+            CloudFit Software is pleased to provide access and support for Jira and Confluence for our valued partners.<br>
+            For any support issues, please contact the CloudFit Command and Control Center at 833-742-8150<br>
+            Monday thru Friday, from 0800 to 1700 ET.
+        </span>
+    </p>
+{{- end }}

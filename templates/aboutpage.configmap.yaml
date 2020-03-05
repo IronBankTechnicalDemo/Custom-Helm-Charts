@@ -1,0 +1,84 @@
+{{- if .Values.customAbout.enabled }}
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ .Release.Name }}-about-config
+data:
+  about.soy: |-
+    {namespace JIRA.Templates.About}
+
+    /**
+    * Prints the about page for JIRA.
+    * @param copyrightSince copyright since year
+    * @param copyrightUntil copyright until year
+    * @param buildVersion build version
+    * @param pluginModules plugin modules
+    * @param showLicenses if licenses section should be expanded (not during development)
+    * @param pluginModulesExist whether or not there are any plugin modules with licenses
+    */
+    {template .success}
+        {call aui.page.document}
+            {param windowTitle: getText('aboutpage.section.title') /}
+            {param content}
+                {call aui.page.page}
+                    {param headerContent}
+                        {call aui.page.pageHeaderMain}
+                            {param content}<h1>{getText('aboutpage.section.title')}</h1>{/param}
+                        {/call}
+                    {/param}
+                    {param contentContent}
+                        {call aui.page.pagePanel}
+                            {param content}
+                                {call aui.page.pagePanelContent}
+                                    {param content}
+                                        <img class="main-about-jira-logo" src="{contextPath()}/images/atlassian-jira-logo-large.png">
+                                        
+                                        <h2>Support</h2>
+
+                                        <p>
+                                        CloudFit Software is pleased to provide access and support for Jira and Confluence for our valued partners. For any support issues, please contact the CloudFit Command and Control Center at 833-742-8150 Monday thru Friday, from 0800 to 1700 ET.
+                                        </p>
+
+                                        <h2>{getText('aboutpage.plugins.header.credits')}</h2>
+                                        <a id="view_credits" href="{contextPath()}/secure/JiraCreditsPage!default.jspa">{getText('aboutpage.plugins.view.credits')}</a>
+
+                                        <h2>{getText('aboutpage.header.licensing')}</h2>
+
+                                        <h3>{getText('aboutpage.product.version', $buildVersion)}</h3>
+
+                                        <p> {getText('aboutpage.copyright', $copyrightSince, $copyrightUntil)|noAutoescape} </p>
+
+                                        <p>{getText('aboutpage.copyright.eua')|noAutoescape}</p>
+
+                                        <p>{getText('aboutpage.copyright.apache')|noAutoescape}</p>
+
+                                        {if $showLicenses}
+                                        <p id="lgpl-libs">
+                                            {getText('aboutpage.copyright.lgpl')}
+                                            {call .lgpl/}
+                                        </p>
+                                        {/if}
+
+                                        <p>{getText('aboutpage.copyright.other')}</p>
+
+                                        <p>{getText('aboutpage.copyright.additional')}</p>
+
+                                        {if $pluginModulesExist}
+                                            <h2>{getText('aboutpage.plugins.header.licensing')}</h2>
+
+                                            {foreach $pluginEntryHtml in $pluginModules}
+                                                {$pluginEntryHtml|noAutoescape}
+                                            {ifempty}
+                                            {/foreach}
+                                        {/if}
+                                    {/param}
+                                {/call}
+                            {/param}
+                        {/call}
+                    {/param}
+                    {param footerContent: '' /}
+                {/call}
+            {/param}
+        {/call}
+    {/template}
+{{- end }}
